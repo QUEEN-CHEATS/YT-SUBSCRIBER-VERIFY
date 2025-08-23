@@ -1,7 +1,7 @@
 const { Client, Events, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const Tesseract = require('tesseract.js');
 const sharp = require('sharp');
-const fetch = require('node-fetch');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const fs = require('fs');
 const config = require("./config.js");
 
@@ -101,14 +101,14 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         // Check the file extension
-        const allowedExtensions = ['jpeg', 'png', 'webp', 'gif'];
+        const allowedExtensions = ['jpg', 'png', 'webp', 'gif'];
         const url = new URL(image.url);
         const fileExtension = url.pathname.split('.').pop().toLowerCase();
 
         console.log(`File extension: ${fileExtension}`);
 
         if (!allowedExtensions.includes(fileExtension)) {
-            await interaction.followUp({ content: 'Unsupported file format. Please upload a JPEG, PNG, WEBP, or GIF image.', ephemeral: true });
+            await interaction.followUp({ content: 'Unsupported file format. Please upload a JPG, PNG, WEBP, or GIF image.', ephemeral: true });
             return;
         }
 
@@ -166,7 +166,7 @@ client.on(Events.InteractionCreate, async interaction => {
             } else {
                 await interaction.followUp({
                     content: `You haven't subscribed to ${config.channel_name} or if this is an error please send a cropped image like attached below!`,
-                    files: ["https://i.ibb.co/rQdzcbT/image.png"],
+                    files: ["https://i.ibb.co/mVVrXQqH/subscriber.png"],
                     ephemeral: true
                 });
             }
@@ -176,6 +176,19 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 });
+
+// ----------------- KEEP ALIVE SERVER -----------------
+const express = require("express");
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("✅ Bot is Alive and Running!");
+});
+
+app.listen(3000, () => {
+  console.log("🌐 KeepAlive server is running on port 3000");
+});
+// -----------------------------------------------------
 
 
 client.login(config.token).catch(err => {

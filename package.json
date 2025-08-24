@@ -1,19 +1,36 @@
 {
-  "name": "freefire-bot",
-  "version": "1.0.0",
-  "description": "Free Fire Verification Bot",
+  "name": "youtube-subscriber-verfier",
+  "version": "6.9.9",
+  "description": "A simple Discord bot which verifies your subscriber and gives you role",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "test": "node index.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devuuuxd/Youtube-Subscriber-Verfier"
+  },
+  "keywords": [
+    "discord.js",
+    "discord",
+    "discordbot",
+    "discord",
+    "bot",
+    "youtube",
+    "verfier",
+    "youtube",
+    "discord",
+    "youtube",
+    "verifier"
+  ],
+  "author": "devu obv?",
+  "license": "ISC",
   "dependencies": {
-    "discord.js": "^14.11.0",
-    "tesseract.js": "^4.1.1",
-    "sharp": "^0.32.0",
-    "node-fetch": "^3.3.1",
-    "express": "^4.18.2"
-  },
-  "engines": {
-    "node": "20.x"
+    "discord.js": "^14.15.3",
+    "express": "^5.1.0",
+    "jimp": "^1.6.0",
+    "node-fetch": "^3.3.2",
+    "sharp": "^0.33.4",
+    "tesseract.js": "^5.1.0"
   }
 }

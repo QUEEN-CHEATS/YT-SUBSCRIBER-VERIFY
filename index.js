@@ -168,8 +168,8 @@ client.on(Events.InteractionCreate, async interaction => {
 
             const successEmbed = new EmbedBuilder()
                 .setTitle("🎉 Verification Successful!")
-                .setDescription(`💝Thanks for subscribing to **${config.channel_name}**.\n\n` +
-                    `💌You have been given SUBSCRIBER role. Enjoy your stay!`
+                .setDescription(`💝 Thanks for subscribing to **${config.channel_name}**.\n\n` +
+                    `💌 You have been given SUBSCRIBER role. Enjoy your stay!`
                 )
                 .setColor("Green")
                 .setFooter({ text: "DEVELOPED BY KHUSHI •" })

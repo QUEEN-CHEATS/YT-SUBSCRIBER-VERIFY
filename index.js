@@ -1,11 +1,11 @@
-const { Client, Events, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { Client, Events, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const Tesseract = require('tesseract.js');
 const sharp = require('sharp');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const fs = require('fs');
 const config = require("./config.js");
 
-// Getting Config
+// ---------------- Config Validation -----------------
 if (!config.token) {
     console.error('Error: Bot token is required in config.js');
     process.exit(1);
@@ -16,12 +16,9 @@ if (!config.channel_name) {
 }
 
 const role_id = config.role_id || null;
-const keywords = config.keywords || null;
-const save_data = config.save_data || 'false';
+const save_data = config.save_data === 'true';
 
-
-
-// Creating a Client
+// ---------------- Client Setup -----------------
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -31,6 +28,7 @@ const client = new Client({
     ]
 });
 
+// ---------------- Slash Command Setup -----------------
 client.once(Events.ClientReady, async readyClient => {
     console.log(`Ready! Logged in as ${readyClient.user.tag}`);
 
@@ -48,154 +46,208 @@ client.once(Events.ClientReady, async readyClient => {
 
     try {
         console.log('Started refreshing application (/) commands.');
-
-        await rest.put(
-            Routes.applicationCommands(client.user.id),
-            { body: commands },
-        );
-
+        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
         console.log('Successfully reloaded application (/) commands.');
     } catch (error) {
         console.error(error);
     }
 });
 
+// ---------------- Utility Functions -----------------
+const normalize = (str = "") => str.replace(/\s+/g, " ").replace(/[’'`]/g, "'").toUpperCase().trim();
 
-
-// Check if a user is already verified
-const isUserVerified = (userId) => {
-    if (!fs.existsSync('subscriber.json')) return false;
-
-    const subscribers = JSON.parse(fs.readFileSync('subscriber.json'));
-    return subscribers.some(subscriber => subscriber.id === userId);
+const isOwnChannel = (text) => {
+    const normText = normalize(text);
+    const allowTokens = [
+        config.channel_name,
+        config.channel_id
+    ].filter(Boolean).map(normalize);
+    return allowTokens.some(token => normText.includes(token));
 };
 
+const hasSubscribeWord = (text) => {
+    const normText = normalize(text);
+    const keywordsArray = config.keywords.split(',').map(k => normalize(k));
+    return keywordsArray.some(k => normText.includes(k));
+};
 
+const isUserVerified = (userId) => {
+    if (!fs.existsSync('subscriber.json')) return false;
+    try {
+        const subscribers = JSON.parse(fs.readFileSync('subscriber.json'));
+        return subscribers.some(subscriber => subscriber.id === userId);
+    } catch (err) {
+        console.error('subscriber.json is corrupted, resetting...', err);
+        fs.writeFileSync('subscriber.json', '[]');
+        return false;
+    }
+};
 
-// Command handling
+// ---------------- Command Handling -----------------
 client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.isCommand()) return;
+    if (interaction.commandName !== 'verify') return;
 
-    const { commandName } = interaction;
+    const member = interaction.member;
+    await interaction.deferReply({ ephemeral: false }); // public messages
 
-    if (commandName === 'verify') {
-        const member = interaction.member;
+    if (!member) {
+        const errorEmbed = new EmbedBuilder()
+            .setTitle("❌ Error")
+            .setDescription("Member not found.")
+            .setColor("Red")
+            .setFooter({ text: "DEVELOPED BY KHUSHI •" })
+            .setTimestamp();
 
-        await interaction.deferReply({ ephemeral: true });
-        if (!member) {
-            await interaction.followUp({ content: 'Member not found.', ephemeral: true });
-            return;
+        await interaction.followUp({ embeds: [errorEmbed] });
+        return;
+    }
+
+    if (isUserVerified(member.user.id)) {
+        const alreadyEmbed = new EmbedBuilder()
+            .setTitle("✅ Already Verified")
+            .setDescription("You are already verified.")
+            .setColor("Green")
+            .setFooter({ text: "DEVELOPED BY KHUSHI •" })
+            .setTimestamp();
+
+        await interaction.followUp({ embeds: [alreadyEmbed] });
+        return;
+    }
+
+    const image = interaction.options.getAttachment('image');
+    if (!image || !image.url) {
+        const noImageEmbed = new EmbedBuilder()
+            .setTitle("❌ No Image Provided")
+            .setDescription("Please provide a valid image (JPG, PNG, WEBP, or GIF).")
+            .setColor("Red")
+            .setFooter({ text: "DEVELOPED BY KHUSHI •" })
+            .setTimestamp();
+
+        await interaction.followUp({ embeds: [noImageEmbed] });
+        return;
+    }
+
+    const allowedExtensions = ['jpg', 'png', 'webp', 'gif'];
+    const fileExtension = new URL(image.url).pathname.split('.').pop().toLowerCase();
+    if (!allowedExtensions.includes(fileExtension)) {
+        const extEmbed = new EmbedBuilder()
+            .setTitle("❌ Unsupported File")
+            .setDescription("Please upload a JPG, PNG, WEBP, or GIF image.")
+            .setColor("Red")
+            .setFooter({ text: "DEVELOPED BY KHUSHI •" })
+            .setTimestamp();
+
+        await interaction.followUp({ embeds: [extEmbed] });
+        return;
+    }
+
+    try {
+        const response = await fetch(image.url);
+        const buffer = Buffer.from(await response.arrayBuffer());
+        const processedImage = await sharp(buffer).resize({ width: 1000 }).toBuffer();
+        const { data: { text } } = await Tesseract.recognize(processedImage);
+
+        console.log(`Extracted text: ${text}`);
+        const normalizedText = normalize(text);
+
+        // Verification Logic
+        let isVerified = false;
+        if (config.exact_channel_only) {
+            if (isOwnChannel(normalizedText) && hasSubscribeWord(normalizedText)) {
+                isVerified = true;
+            }
+        } else {
+            if (isOwnChannel(normalizedText) || hasSubscribeWord(normalizedText)) {
+                isVerified = true;
+            }
         }
 
-        // Check if the user is already verified
-        if (isUserVerified(member.user.id)) {
-            await interaction.followUp({ content: 'You are already verified.', ephemeral: true });
-            return;
-        }
+        if (isVerified) {
+            if (role_id) await member.roles.add(role_id);
 
-        const image = interaction.options.getAttachment('image');
+            const successEmbed = new EmbedBuilder()
+                .setTitle("🎉 Verification Successful!")
+                .setDescription(`💝Thanks for subscribing to **${config.channel_name}**.\n\n` +
+                    `💌You have been given SUBSCRIBER role. Enjoy your stay!`
+                )
+                .setColor("Green")
+                .setFooter({ text: "DEVELOPED BY KHUSHI •" })
+                .setTimestamp();
 
-        if (!image || !image.url) {
-            await interaction.followUp({ content: 'Please provide a valid image.', ephemeral: true });
-            return;
-        }
+            await interaction.followUp({ embeds: [successEmbed] });
 
-        // Check the file extension
-        const allowedExtensions = ['jpg', 'png', 'webp', 'gif'];
-        const url = new URL(image.url);
-        const fileExtension = url.pathname.split('.').pop().toLowerCase();
-
-        console.log(`File extension: ${fileExtension}`);
-
-        if (!allowedExtensions.includes(fileExtension)) {
-            await interaction.followUp({ content: 'Unsupported file format. Please upload a JPG, PNG, WEBP, or GIF image.', ephemeral: true });
-            return;
-        }
-
-        // Getting the Image
-        try {
-            const response = await fetch(image.url);
-            const arrayBuffer = await response.arrayBuffer();
-            const buffer = Buffer.from(arrayBuffer);
-
-            // Use sharp to preprocess the image
-            const processedImage = await sharp(buffer)
-                .resize({ width: 1000 })
-                .toBuffer();
-
-            // Use Tesseract to extract text
-            const { data: { text } } = await Tesseract.recognize(processedImage);
-
-            // Convert extracted text and channel name to lowercase for case-insensitive comparison
-            const extractedTextLower = text.toLowerCase();
-            const channelNameLower = config.channel_name.toLowerCase();
-
-            console.log(`Extracted text: ${text}`);
-
-            // Initialize a flag for channel name match
-            let containsChannelName = extractedTextLower.includes(channelNameLower);
-
-            // Check if any of the keywords are in the extracted text
-            if (config.keywords) {
-                const keywordsArray = config.keywords.split(',').map(keyword => keyword.trim().toLowerCase());
-                containsChannelName = containsChannelName || keywordsArray.some(keyword => extractedTextLower.includes(keyword));
+            if (save_data) {
+                const userData = {
+                    username: member.user.username,
+                    id: member.user.id,
+                    time: new Date().toISOString(),
+                    accountCreated: member.user.createdAt.toISOString()
+                };
+                let subscribers = [];
+                if (fs.existsSync('subscriber.json')) {
+                    subscribers = JSON.parse(fs.readFileSync('subscriber.json'));
+                }
+                subscribers.push(userData);
+                fs.writeFileSync('subscriber.json', JSON.stringify(subscribers, null, 2));
             }
 
-            // If a match is found
-            if (containsChannelName) {
-                if (role_id) {
-                    await member.roles.add(role_id);
-                }
-                await interaction.followUp({ content: `Thanks for subscribing to ${config.channel_name}`, ephemeral: true });
+        } else {
+    const errorEmbed = new EmbedBuilder()
+        .setTitle("❌ Verification Failed")
+        .setDescription(
+            `⚠️ You haven't subscribed to **${config.channel_name}** or your screenshot is invalid.\n\n` +
+            `👉 GO AND SUBSCRIBE 🔴 **[${config.channel_name}](${config.channel_link})**\n\n` +
+            `📷 Send the screenshot like below.`
+        )
+        .setColor("Red")
+        .setFooter({ text: "DEVELOPED BY KHUSHI •" })
+        .setTimestamp()
+        .setImage("https://i.ibb.co/mVVrXQqH/subscriber.png");
 
-                // Save user data if save_data is true
-                if (save_data === 'true') {
-                    const userData = {
-                        username: member.user.username,
-                        id: member.user.id,
-                        time: new Date().toISOString(),
-                        accountCreated: member.user.createdAt.toISOString()
-                    };
-                    let subscribers = [];
-                    if (fs.existsSync('subscriber.json')) {
-                        subscribers = JSON.parse(fs.readFileSync('subscriber.json'));
-                    }
-                    subscribers.push(userData);
-                    fs.writeFileSync('subscriber.json', JSON.stringify(subscribers, null, 2));
-                }
-            } else {
-                await interaction.followUp({
-                    content: `You haven't subscribed to ${config.channel_name} or if this is an error please send a cropped image like attached below!`,
-                    files: ["https://i.ibb.co/mVVrXQqH/subscriber.png"],
-                    ephemeral: true
-                });
-            }
-        } catch (error) {
-            console.error('Error processing the image:', error);
-            await interaction.followUp({ content: 'There was an error processing the image. Please try again.', ephemeral: true });
-        }
+    await interaction.followUp({ embeds: [errorEmbed] });
+}
+
+
+    } catch (error) {
+        console.error('Error processing the image:', error);
+        const errorEmbed = new EmbedBuilder()
+            .setTitle("❌ Processing Error")
+            .setDescription("❌There was an error processing the image. Please try again.")
+            .setColor("Red")
+            .setFooter({ text: "DEVELOPED BY KHUSHI •" })
+            .setTimestamp();
+
+        await interaction.followUp({ embeds: [errorEmbed] });
     }
 });
 
-// ----------------- KEEP ALIVE SERVER -----------------
+// -------------------- Auto Channel Link Reply -----------------
+client.on("messageCreate", async (message) => {
+    if (message.author.bot) return;
+
+    const content = message.content.toLowerCase();
+
+    if (content.includes("link") || content.includes("yt link") || content.includes("chanel link") || content.includes("channel link")) {
+        const replyEmbed = new EmbedBuilder()
+            .setTitle("🔴 Official YouTube Channel")
+            .setDescription(
+                `📺 Subscribe Now: **[${config.channel_name}](${config.channel_link})**\n\n` +
+                ` Don't forget to turn on 🔔 notifications!`
+            )
+            .setColor("Blue")
+            .setImage("https://i.ibb.co/mVVrXQqH/subscriber.png")
+            .setFooter({ text: "DEVELOPED BY KHUSHI •" })
+            .setTimestamp();
+
+        await message.reply({ embeds: [replyEmbed] });
+    }
+});
+
+// ---------------- Keep Alive Server -----------------
 const express = require("express");
 const app = express();
+app.get("/", (req, res) => res.send("✅ Bot is Alive and Running!"));
+app.listen(3000, () => console.log("🌐 KeepAlive server is running on port 3000"));
 
-app.get("/", (req, res) => {
-  res.send("✅ Bot is Alive and Running!");
-});
-
-app.listen(3000, () => {
-  console.log("🌐 KeepAlive server is running on port 3000");
-});
-// -----------------------------------------------------
-
-
-client.login(config.token).catch(err => {
-    console.error('Failed to login:', err);
-});
-/*/* ALL CREDITS TO 
-/* https://www.youtube.com/@devuuu_xd (YOUTUBE)
-/* https://github.com/devuuuxd (GITHUB)
-/* MAKE SURE TO GIVE ME CREDITS 😼😼
-/*/
+client.login(config.token).catch(err => console.error('Failed to login:', err));

@@ -1,5 +1,5 @@
 module.exports = {
-    token: "TOKEN", // Add your bot's token here (REQUIRED)
+    token: "MTM5OTI3NzA2MzQ1Nzg2NTgzOQ.GH6-P0.DDIMDQhbclmKtwSpQw2nT0JcdwKsRe634ZJt2g", // Add your bot's token here (REQUIRED)
     channel_name: "QUEEN CHEATS", // Specify your YouTube channel's name here (REQUIRED)
     channel_handle: "@queen_cheats", // Specify your YouTube channel's handle here (OPTIONAL)
     channel_id: "UC1234567890ABCDE", // Specify your YouTube channel's ID here (OPTIONAL)
